@@ -858,6 +858,7 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
         // modify it.
         $compileNodes = jqLite($compileNodes);
       }
+
       // We can not compile top level text elements since text nodes can be merged and we will
       // not be able to attach scope data to them, so we will wrap them in <span>
       forEach($compileNodes, function(node, index){
@@ -865,10 +866,13 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
           $compileNodes[index] = node = jqLite(node).wrap('<span></span>').parent()[0];
         }
       });
+
       var compositeLinkFn =
               compileNodes($compileNodes, transcludeFn, $compileNodes,
-                           maxPriority, ignoreDirective, previousCompileContext);
+                           maxPriority, ignoreDirective, previousCompileContext, namespace);
+              
       safeAddClass($compileNodes, 'ng-scope');
+
       return function publicLinkFn(scope, cloneConnectFn, transcludeControllers, parentBoundTranscludeFn){
         assertArg(scope, 'scope');
         // important!!: we must call our jqLite.clone() since the jQuery one is trying to be smart
@@ -914,20 +918,31 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
      * @returns {Function} A composite linking function of all of the matched directives or null.
      */
     function compileNodes(nodeList, transcludeFn, $rootElement, maxPriority, ignoreDirective,
-                            previousCompileContext) {
+                            previousCompileContext, namespace) {
       var linkFns = [],
           attrs, directives, nodeLinkFn, childNodes, childLinkFn, linkFnFound;
+
+      namespace = namespace || {
+      	type: 'html'
+      };
 
       for (var i = 0; i < nodeList.length; i++) {
         attrs = new Attributes();
 
+        var node = nodeList[i];
+        if(node.tagName === 'svg') {
+        	namespace = {
+        		type: 'svg'
+        	};
+        }
+
         // we must always refer to nodeList[i] since the nodes can be replaced underneath us.
-        directives = collectDirectives(nodeList[i], [], attrs, i === 0 ? maxPriority : undefined,
+        directives = collectDirectives(node, [], attrs, i === 0 ? maxPriority : undefined,
                                         ignoreDirective);
 
         nodeLinkFn = (directives.length)
-            ? applyDirectivesToNode(directives, nodeList[i], attrs, transcludeFn, $rootElement,
-                                      null, [], [], previousCompileContext)
+            ? applyDirectivesToNode(directives, node, attrs, transcludeFn, $rootElement,
+                                      null, [], [], previousCompileContext, namespace)
             : null;
 
         if (nodeLinkFn && nodeLinkFn.scope) {
@@ -935,13 +950,13 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
         }
 
         childLinkFn = (nodeLinkFn && nodeLinkFn.terminal ||
-                      !(childNodes = nodeList[i].childNodes) ||
+                      !(childNodes = node.childNodes) ||
                       !childNodes.length)
             ? null
             : compileNodes(childNodes,
                  nodeLinkFn ? (
                   (nodeLinkFn.transcludeOnThisElement || !nodeLinkFn.templateOnThisElement)
-                     && nodeLinkFn.transclude) : transcludeFn);
+                     && nodeLinkFn.transclude) : transcludeFn, undefined, undefined, undefined, undefined, namespace);
 
         linkFns.push(nodeLinkFn, childLinkFn);
         linkFnFound = linkFnFound || nodeLinkFn || childLinkFn;
@@ -1800,7 +1815,7 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
               $rootElement[i] = $compileNode[0];
             }
           });
-          afterTemplateChildLinkFn = compileNodes($compileNode[0].childNodes, childTranscludeFn);
+          afterTemplateChildLinkFn = compileNodes($compileNode[0].childNodes, childTranscludeFn, undefined, undefined, undefined, undefined, namespace);
 
           while(linkQueue.length) {
             var scope = linkQueue.shift(),
